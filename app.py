@@ -6,7 +6,7 @@ from io import BytesIO
 
 st.set_page_config(page_title="ソルガム可変施肥量計算（GNDVI→N吸収量）", layout="wide")
 st.markdown(
-    "<h3 style='text-align: center;'>🌾 ソルガム可変施肥量計算（GNDVI→窒素吸収量→可変施肥量）信大作成</h3>",
+    "<h3 style='text-align: center;'>🌾 ソルガム可変施肥量計算（GNDVI→窒素吸収量→可変施肥量）緑肥プロ</h3>",
     unsafe_allow_html=True
 )
 
