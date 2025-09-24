@@ -1,11 +1,14 @@
-# app.py（リセットボタン付き最小修正版）
+# app.py（リセットオプション付き）
 import streamlit as st
 import numpy as np
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="可変施肥量シミュレーター（GNDVI→N吸収量）", layout="wide")
-st.title("🌾 可変施肥量シミュレーター（GNDVI→窒素吸収量→可変施肥量）")
+st.set_page_config(page_title="ソルガム可変施肥量計算（GNDVI→N吸収量）", layout="wide")
+st.markdown(
+    "<h3 style='text-align: center;'>🌾 ソルガム可変施肥量計算（GNDVI→窒素吸収量→可変施肥量）信大作成</h3>",
+    unsafe_allow_html=True
+)
 
 # -----------------------------
 # ユーティリティ
@@ -102,13 +105,30 @@ if uploaded is not None:
     except Exception as e:
         st.error(f"CSV 読み込み失敗: {e}")
 
-# --- ★ リセットボタンを追加 ---
+# --- ★ リセットオプション追加 ---
 st.sidebar.divider()
 st.sidebar.subheader("シート操作 / Sheet ops")
-if st.sidebar.button("🔄 植生指数シートをリセット（空欄に）", use_container_width=True):
+
+reset_mode = st.sidebar.selectbox(
+    "リセット方法を選択",
+    ["空欄（NaN）にする", "0で埋める", "一定値で埋める"],
+    index=0
+)
+const_val = st.sidebar.number_input(
+    "一定値 (Reset value)",
+    value=0.0, step=0.1, format="%.3f",
+    disabled=(reset_mode != "一定値で埋める")
+)
+
+if st.sidebar.button("🔄 リセットを実行", use_container_width=True):
     r, c = st.session_state.rows, st.session_state.cols
-    st.session_state.gndvi_df = make_df(r, c)
-    st.toast("植生指数シートを空欄（NaN）にリセットしました。")
+    df = make_df(r, c)
+    if reset_mode == "0で埋める":
+        df[:] = 0.0
+    elif reset_mode == "一定値で埋める":
+        df[:] = const_val
+    st.session_state.gndvi_df = df
+    st.toast(f"植生指数シートを『{reset_mode}』でリセットしました。")
 
 st.sidebar.caption("計算式: N吸収量 = 0.2567 × exp(5.125 × GNDVI)")
 
