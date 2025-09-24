@@ -1,8 +1,12 @@
-# app.py（リセットオプション付き）
+# app.py（リセットオプション＋可変施肥マップ付き）
 import streamlit as st
 import numpy as np
 import pandas as pd
 from io import BytesIO
+
+# ★ 追加
+import matplotlib.pyplot as plt
+import numpy as np
 
 st.set_page_config(page_title="ソルガム可変施肥量計算（GNDVI→N吸収量）", layout="wide")
 st.markdown(
@@ -162,13 +166,31 @@ for df in (n_uptake, n_sorghum, variable_N):
     df.columns = gndvi_df.columns
 
 # -----------------------------
+# ★ 可視化用：カラーマップ設定（サイドバー）
+# -----------------------------
+st.sidebar.divider()
+st.sidebar.subheader("マップ表示設定 / Map settings")
+
+use_fixed_scale = st.sidebar.checkbox("色スケールを固定する（vmin/vmax 指定）", value=False)
+decimals = st.sidebar.number_input("セル数値の小数桁", min_value=0, max_value=6, value=1, step=1)
+if use_fixed_scale:
+    default_min = float(np.nanmin(variable_N.values)) if np.isfinite(np.nanmin(variable_N.values)) else 0.0
+    default_max = float(np.nanmax(variable_N.values)) if np.isfinite(np.nanmax(variable_N.values)) else 1.0
+    vmin = st.sidebar.number_input("vmin（最小）", value=round(default_min, 2))
+    vmax = st.sidebar.number_input("vmax（最大）", value=round(default_max, 2))
+else:
+    vmin = None
+    vmax = None
+
+# -----------------------------
 # タブ表示
 # -----------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "植生指数シート",
     "窒素吸収量シート",
     "ソルガム由来の窒素量シート",
     "可変施肥量シート",
+    "可変施肥マップ（色分け＋数値）",     # ★ 追加タブ
 ])
 
 with tab1:
@@ -180,6 +202,57 @@ with tab3:
 with tab4:
     st.dataframe(variable_N.round(3), use_container_width=True)
     st.caption(f"基準施肥量 = {baseline_N:.2f} kg/10a")
+
+# -----------------------------
+# ★ 可変施肥マップの描画
+# -----------------------------
+with tab5:
+    st.caption("行×列のグリッドを“ヒートマップ”として表示し、各セルに可変施肥量（kg/10a）を重ねて表示します。")
+    data = variable_N.values.astype(float)
+    # NaN をマスク（NaN セルは薄灰色背景に）
+    masked = np.ma.masked_invalid(data)
+
+    # vmin/vmax
+    _vmin = np.nanmin(data) if vmin is None else vmin
+    _vmax = np.nanmax(data) if vmax is None else vmax
+    if not np.isfinite(_vmin): _vmin = 0.0
+    if not np.isfinite(_vmax): _vmax = 1.0
+    if _vmin == _vmax:
+        _vmax = _vmin + 1.0  # 同値回避
+
+    # 描画
+    fig, ax = plt.subplots(figsize=(max(5, data.shape[1]*0.7), max(4, data.shape[0]*0.7)))
+    # cmapとNaN色
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad(color="#e0e0e0")  # NaNは薄灰
+
+    im = ax.imshow(masked, cmap=cmap, vmin=_vmin, vmax=_vmax)
+    # グリッド線（セル境界）
+    ax.set_xticks(np.arange(data.shape[1]) - 0.5, minor=True)
+    ax.set_yticks(np.arange(data.shape[0]) - 0.5, minor=True)
+    ax.grid(which="minor", color="white", linewidth=1, alpha=0.7)
+    ax.tick_params(which="both", bottom=False, left=False, labelbottom=False, labelleft=False)
+
+    # セル内テキスト（値）
+    rng = _vmax - _vmin
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            val = data[i, j]
+            if np.isnan(val):
+                continue
+            # 背景の明るさに応じて文字色変更（ざっくり）
+            norm = (val - _vmin) / rng if rng > 0 else 0.5
+            text_color = "black" if norm > 0.6 else "white"
+            ax.text(
+                j, i, f"{val:.{decimals}f}",
+                ha="center", va="center", fontsize=10, color=text_color
+            )
+
+    # カラーバー
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("可変施肥量 (kg/10a)")
+
+    st.pyplot(fig, use_container_width=True)
 
 # -----------------------------
 # Excel ダウンロード
