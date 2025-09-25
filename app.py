@@ -183,25 +183,28 @@ else:
     vmax = None
 
 # -----------------------------
-# タブ表示
+# タブ表示（★並び替え：可変施肥量シートを先頭に）
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "植生指数シート",
+tab_var, tab2, tab3, tab1, tab5 = st.tabs([
+    "可変施肥量シート",          # ← 先頭に配置
     "窒素吸収量シート",
     "ソルガム由来の窒素量シート",
-    "可変施肥量シート",
-    "可変施肥マップ（色分け＋数値）",     # ★ 追加タブ
+    "植生指数シート",
+    "可変施肥マップ（色分け＋数値）",
 ])
+
+with tab_var:
+    st.dataframe(variable_N.round(3), use_container_width=True)
+    st.caption(f"基準施肥量 = {baseline_N:.2f} kg/10a")
+
+with tab2:
+    st.dataframe(n_uptake.round(3), use_container_width=True)
+
+with tab3:
+    st.dataframe(n_sorghum.round(3), use_container_width=True)
 
 with tab1:
     st.dataframe(gndvi_df, use_container_width=True)
-with tab2:
-    st.dataframe(n_uptake.round(3), use_container_width=True)
-with tab3:
-    st.dataframe(n_sorghum.round(3), use_container_width=True)
-with tab4:
-    st.dataframe(variable_N.round(3), use_container_width=True)
-    st.caption(f"基準施肥量 = {baseline_N:.2f} kg/10a")
 
 # -----------------------------
 # ★ 可変施肥マップの描画
