@@ -1,4 +1,4 @@
-# app.py（リセットオプション＋可変施肥マップ付き）
+# app.py（リセットオプション＋可変施肥マップ付き＋可変施肥シートを先頭に）
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -183,10 +183,10 @@ else:
     vmax = None
 
 # -----------------------------
-# タブ表示（★並び替え：可変施肥量シートを先頭に）
+# タブ表示（可変施肥シートを先頭へ）
 # -----------------------------
 tab_var, tab2, tab3, tab1, tab5 = st.tabs([
-    "可変施肥量シート",          # ← 先頭に配置
+    "可変施肥量シート",          # 先頭に配置
     "窒素吸収量シート",
     "ソルガム由来の窒素量シート",
     "植生指数シート",
@@ -212,46 +212,35 @@ with tab1:
 with tab5:
     st.caption("行×列のグリッドを“ヒートマップ”として表示し、各セルに可変施肥量（kg/10a）を重ねて表示します。")
     data = variable_N.values.astype(float)
-    # NaN をマスク（NaN セルは薄灰色背景に）
     masked = np.ma.masked_invalid(data)
 
-    # vmin/vmax
     _vmin = np.nanmin(data) if vmin is None else vmin
     _vmax = np.nanmax(data) if vmax is None else vmax
     if not np.isfinite(_vmin): _vmin = 0.0
     if not np.isfinite(_vmax): _vmax = 1.0
     if _vmin == _vmax:
-        _vmax = _vmin + 1.0  # 同値回避
+        _vmax = _vmin + 1.0
 
-    # 描画
     fig, ax = plt.subplots(figsize=(max(5, data.shape[1]*0.7), max(4, data.shape[0]*0.7)))
-    # cmapとNaN色
     cmap = plt.get_cmap("viridis").copy()
-    cmap.set_bad(color="#e0e0e0")  # NaNは薄灰
+    cmap.set_bad(color="#e0e0e0")
 
     im = ax.imshow(masked, cmap=cmap, vmin=_vmin, vmax=_vmax)
-    # グリッド線（セル境界）
     ax.set_xticks(np.arange(data.shape[1]) - 0.5, minor=True)
     ax.set_yticks(np.arange(data.shape[0]) - 0.5, minor=True)
     ax.grid(which="minor", color="white", linewidth=1, alpha=0.7)
     ax.tick_params(which="both", bottom=False, left=False, labelbottom=False, labelleft=False)
 
-    # セル内テキスト（値）
     rng = _vmax - _vmin
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
             val = data[i, j]
             if np.isnan(val):
                 continue
-            # 背景の明るさに応じて文字色変更（ざっくり）
             norm = (val - _vmin) / rng if rng > 0 else 0.5
             text_color = "black" if norm > 0.6 else "white"
-            ax.text(
-                j, i, f"{val:.{decimals}f}",
-                ha="center", va="center", fontsize=10, color=text_color
-            )
+            ax.text(j, i, f"{val:.{decimals}f}", ha="center", va="center", fontsize=10, color=text_color)
 
-    # カラーバー
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label("可変施肥量 (kg/10a)")
 
