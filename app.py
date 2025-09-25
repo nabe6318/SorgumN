@@ -1,9 +1,9 @@
-# app.py（入力を-1〜+1に制限／可変施肥マップを先頭タブ／植生指数タブ非表示）
+# app.py（N吸収量を26.6で上限 / GNDVI入力を-1〜+1に制限 / 可変施肥マップを先頭タブ）
+import io
 import streamlit as st
 import numpy as np
 import pandas as pd
 from io import BytesIO
-
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="ソルガム可変施肥量計算（GNDVI→N吸収量）", layout="wide")
@@ -26,17 +26,38 @@ def make_df(r, c, like=None):
     return df
 
 def read_csv_safely(file) -> pd.DataFrame:
-    """CSVを読み込み、数値化。列・行ラベルを補い、[-1,1]にクリップ。"""
+    """CSVを読み込み、数値化し、[-1, 1] にクリップして返す。"""
+    # file は一度読み込むと内部ポインタが進むので先頭へ
     try:
-        df = pd.read_csv(file, header=0, index_col=0)
-    except Exception:
         file.seek(0)
-        df = pd.read_csv(file, header=None)
+    except Exception:
+        pass
+    # 文字コード・区切りの自動推定を含む頑健読込
+    content = file.read()
+    if isinstance(content, bytes):
+        raw = content
+    else:
+        raw = content.encode("utf-8", errors="ignore")
+    for enc in ["utf-8-sig", "utf-8", "cp932", "latin1"]:
+        try:
+            buf = io.StringIO(raw.decode(enc, errors="strict"))
+            df = pd.read_csv(buf, sep=None, engine="python", on_bad_lines="skip", header=0, index_col=0)
+            if df.empty:
+                # ヘッダーなしの可能性
+                buf = io.StringIO(raw.decode(enc, errors="strict"))
+                df = pd.read_csv(buf, sep=None, engine="python", on_bad_lines="skip", header=None)
+            break
+        except Exception:
+            df = None
+            continue
+    if df is None:
+        raise ValueError("CSVの読み込みに失敗しました。")
+
     df = df.apply(pd.to_numeric, errors="coerce")
     df.index = [f"R{i+1}" for i in range(df.shape[0])]
     df.columns = [f"C{j+1}" for j in range(df.shape[1])]
-    clipped = df.clip(lower=-1.0, upper=1.0)
-    return clipped
+    df = df.clip(lower=-1.0, upper=1.0)
+    return df
 
 def to_excel_bytes(sheets: dict) -> bytes:
     bio = BytesIO()
@@ -97,16 +118,10 @@ uploaded = st.sidebar.file_uploader("CSV 読み込み（置き換え）", type=[
 if uploaded is not None:
     try:
         df_in = read_csv_safely(uploaded)
-        # クリップの有無をチェック
-        changed = ~df_in.eq(pd.read_csv(uploaded, header=0, index_col=0, on_bad_lines='skip')\
-                            .apply(pd.to_numeric, errors="coerce")\
-                            .clip(-1, 1)).stack(dropna=False).all()
         st.session_state.gndvi_df = df_in
         st.session_state.rows, st.session_state.cols = df_in.shape
         st.success(f"CSV 読み込み成功（{df_in.shape[0]} 行 × {df_in.shape[1]} 列）")
-        # クリップ通知（簡易）
-        if (df_in.min().min() <= -1.0) or (df_in.max().max() >= 1.0):
-            st.toast("範囲外の値を[-1,1]に自動クリップしました。")
+        st.toast("CSVの値を[-1, 1]にクリップしました。", icon="ℹ️")
     except Exception as e:
         st.error(f"CSV 読み込み失敗: {e}")
 
@@ -135,44 +150,51 @@ if st.sidebar.button("🔄 リセットを実行", use_container_width=True):
     st.session_state.gndvi_df = df
     st.toast(f"植生指数シートを『{reset_mode}』でリセットしました。")
 
-st.sidebar.caption("計算式: N吸収量 = 0.2567 × exp(5.125 × GNDVI)")
+st.sidebar.caption("計算式: N吸収量 = min( 0.2567 × exp(5.125 × GNDVI), 26.6 )")
 
 # -----------------------------
-# ① 入力（タブ非表示・エディタは折りたたみ内）
+# ① 入力シート（-1〜+1に制限）
 # -----------------------------
-with st.expander("📝 GNDVI 入力（-1.0〜+1.0 の小数で編集）", expanded=False):
-    # 列ごとに数値範囲を設定（全列に適用）
-    col_cfg = {
-        col: st.column_config.NumberColumn(
-            label=col, min_value=-1.0, max_value=1.0, step=0.001, format="%.3f"
-        )
-        for col in st.session_state.gndvi_df.columns
-    }
-    gndvi_df_edit = st.data_editor(
-        st.session_state.gndvi_df.astype("float64"),
-        num_rows="fixed",
-        use_container_width=True,
-        key="gndvi_editor",
-        column_config=col_cfg
+st.subheader("① 植生指数シート（GNDVI を入力：-1.0〜+1.0）")
+
+# 列ごとに入力制限を付ける（全列共通）
+col_cfg = {
+    col: st.column_config.NumberColumn(
+        label=col, min_value=-1.0, max_value=1.0, step=0.001, format="%.3f"
     )
-    # 入力後の安全化：数値化＋クリップ
-    g = gndvi_df_edit.apply(pd.to_numeric, errors="coerce")
-    clipped = g.clip(lower=-1.0, upper=1.0)
-    if not clipped.equals(g):
-        st.toast("範囲外の値を[-1,1]に自動クリップしました。")
-    st.session_state.gndvi_df = clipped
+    for col in st.session_state.gndvi_df.columns
+}
+
+gndvi_df = st.data_editor(
+    st.session_state.gndvi_df.astype("float64"),
+    num_rows="fixed",
+    use_container_width=True,
+    key="gndvi_editor",
+    column_config=col_cfg
+)
+# 安全側：最終的に数値化＋クリップ
+gndvi_df = gndvi_df.apply(pd.to_numeric, errors="coerce").clip(lower=-1.0, upper=1.0)
+st.session_state.gndvi_df = gndvi_df
 
 # -----------------------------
-# ② 計算
+# ② 計算（★N吸収量を26.6で上限）
 # -----------------------------
 def safe_exp(x):
     with np.errstate(over="ignore", invalid="ignore"):
         return np.exp(x)
 
-gndvi_df = st.session_state.gndvi_df
-n_uptake = 0.2567 * safe_exp(5.125 * gndvi_df.astype(float))  # 窒素吸収量（kg/10a）
-n_sorghum = n_uptake * 0.3                                   # ソルガム由来N（kg/10a）
-variable_N = baseline_N - n_sorghum                           # 可変施肥量
+# もとの計算
+n_uptake_raw = 0.2567 * safe_exp(5.125 * gndvi_df.astype(float))  # 窒素吸収量（kg/10a）
+# 上限クリップ
+n_uptake = n_uptake_raw.clip(upper=26.6)
+
+# 上限適用の通知（任意）
+if (n_uptake != n_uptake_raw).to_numpy().any():
+    st.toast("窒素吸収量シートの上限 26.6 kg/10a を超えたセルを 26.6 に丸めました。", icon="⚠️")
+
+# 下流計算
+n_sorghum = n_uptake * 0.3
+variable_N = baseline_N - n_sorghum
 if clip_negative:
     variable_N = variable_N.clip(lower=0)
 
@@ -197,16 +219,17 @@ else:
     vmax = None
 
 # -----------------------------
-# タブ（先頭：可変施肥マップ）
+# タブ（★先頭：可変施肥マップ）
 # -----------------------------
-tab_map, tab_var, tab2, tab3 = st.tabs([
-    "可変施肥マップ（色分け＋数値）",
+tab_map, tab_var, tab2, tab3, tab1 = st.tabs([
+    "可変施肥マップ（色分け＋数値）",  # 先頭
     "可変施肥量シート",
     "窒素吸収量シート",
     "ソルガム由来の窒素量シート",
+    "植生指数シート",
 ])
 
-# --- 可変施肥マップ ---
+# --- 可変施肥マップ（先頭タブ） ---
 with tab_map:
     st.caption("行×列のグリッドをヒートマップ表示し、セルに可変施肥量（kg/10a）を重ねて表示します。")
     data = variable_N.values.astype(float)
@@ -243,7 +266,7 @@ with tab_map:
     cbar.set_label("可変施肥量 (kg/10a)")
     st.pyplot(fig, use_container_width=True)
 
-# --- テーブル3種 ---
+# --- テーブル ---
 with tab_var:
     st.dataframe(variable_N.round(3), use_container_width=True)
     st.caption(f"基準施肥量 = {baseline_N:.2f} kg/10a")
@@ -254,16 +277,20 @@ with tab2:
 with tab3:
     st.dataframe(n_sorghum.round(3), use_container_width=True)
 
+with tab1:
+    st.dataframe(gndvi_df, use_container_width=True)
+
 # -----------------------------
 # Excel ダウンロード
 # -----------------------------
 excel_bytes = to_excel_bytes({
+    "植生指数シート": gndvi_df,
     "窒素吸収量シート": n_uptake.round(6),
     "ソルガム由来の窒素量シート": n_sorghum.round(6),
     "可変施肥量シート": variable_N.round(6),
 })
 st.download_button(
-    label="📥 Excel ダウンロード（3シート）",
+    label="📥 Excel ダウンロード（4シート）",
     data=excel_bytes,
     file_name="variable_fertilizer.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
