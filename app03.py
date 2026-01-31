@@ -30,24 +30,31 @@ def read_csv_safely(file) -> pd.DataFrame:
         file.seek(0)
     except Exception:
         pass
+
     content = file.read()
     if isinstance(content, bytes):
         raw = content
     else:
         raw = content.encode("utf-8", errors="ignore")
-    
+
     df = None
     for enc in ["utf-8-sig", "utf-8", "cp932", "latin1"]:
         try:
             buf = io.StringIO(raw.decode(enc, errors="strict"))
-            df = pd.read_csv(buf, sep=None, engine="python", on_bad_lines="skip", header=0, index_col=0)
+            df = pd.read_csv(
+                buf, sep=None, engine="python", on_bad_lines="skip",
+                header=0, index_col=0
+            )
             if df.empty:
                 buf = io.StringIO(raw.decode(enc, errors="strict"))
-                df = pd.read_csv(buf, sep=None, engine="python", on_bad_lines="skip", header=None)
+                df = pd.read_csv(
+                    buf, sep=None, engine="python", on_bad_lines="skip",
+                    header=None
+                )
             break
         except Exception:
             continue
-    
+
     if df is None:
         raise ValueError("CSVの読み込みに失敗しました。")
 
@@ -85,20 +92,23 @@ crop_type = st.sidebar.selectbox(
     ["ソルガム", "クロタラリア"]
 )
 
+# ★修正：ソルガムの式を変更（クロタラリアはそのまま）
 if crop_type == "ソルガム":
-    coeff_a = 0.2567
-    coeff_b = 5.125
+    coeff_a = 0.0394
+    coeff_b = 8.0356
 else:  # クロタラリア
     coeff_a = 0.0711
     coeff_b = 7.1541
 
+# ★修正：基準施肥量デフォルトを 8 に変更
 baseline_N = st.sidebar.number_input(
     "基準施肥量（kg/10a）",
-    min_value=0.0, max_value=100.0, value=7.0, step=0.1, format="%.2f"
+    min_value=0.0, max_value=100.0, value=8.0, step=0.1, format="%.2f"
 )
 
+# ★修正：表示名を「肥効率」→「肥効率近似値」
 efficiency = st.sidebar.number_input(
-    "肥効率（緑肥由来窒素の利用率）",
+    "肥効率近似値（緑肥由来窒素の利用率）",
     min_value=0.0, max_value=1.0, value=0.3, step=0.01, format="%.2f"
 )
 
@@ -107,7 +117,10 @@ clip_negative = st.sidebar.checkbox("可変施肥量を 0 未満にしない", v
 st.sidebar.divider()
 st.sidebar.subheader("CSV 入出力")
 
-template_df = make_df(st.session_state.gndvi_df.shape[0], st.session_state.gndvi_df.shape[1])
+template_df = make_df(
+    st.session_state.gndvi_df.shape[0],
+    st.session_state.gndvi_df.shape[1]
+)
 st.sidebar.download_button(
     "📄 空テンプレCSVダウンロード",
     data=df_to_csv_bytes(template_df),
@@ -120,7 +133,7 @@ if uploaded is not None:
     try:
         df_in = read_csv_safely(uploaded)
         st.session_state.gndvi_df = df_in
-        st.success(f"CSV 読み込み成功")
+        st.success("CSV 読み込み成功")
     except Exception as e:
         st.error(f"CSV 読み込み失敗: {e}")
 
@@ -133,7 +146,11 @@ st.sidebar.download_button(
 
 st.sidebar.divider()
 formula_text = f"{coeff_a} × exp({coeff_b} × GNDVI)"
-st.sidebar.caption(f"現在の計算式 ({crop_type}):\n\nN吸収量 = min( {formula_text}, 26.6 )\n\n可変施肥量 = 基準施肥量 - (N吸収量 × {efficiency})")
+st.sidebar.caption(
+    f"現在の計算式 ({crop_type}):\n\n"
+    f"N吸収量 = min( {formula_text}, 26.6 )\n\n"
+    f"可変施肥量 = 基準施肥量 - (N吸収量 × 肥効率近似値 {efficiency})"
+)
 
 # -----------------------------
 # ① 入力シート
@@ -211,33 +228,45 @@ with tab_map:
     st.caption(f"対象緑肥: {crop_type} / 計算式: {formula_text}")
     data = variable_N.values.astype(float)
     masked = np.ma.masked_invalid(data)
+
     _vmin = np.nanmin(data) if vmin_input is None else vmin_input
     _vmax = np.nanmax(data) if vmax_input is None else vmax_input
-    if not np.isfinite(_vmin): _vmin = 0.0
-    if not np.isfinite(_vmax): _vmax = 1.0
+    if not np.isfinite(_vmin):
+        _vmin = 0.0
+    if not np.isfinite(_vmax):
+        _vmax = 1.0
 
-    fig, ax = plt.subplots(figsize=(max(5, data.shape[1]*0.7), max(4, data.shape[0]*0.7)))
+    fig, ax = plt.subplots(
+        figsize=(max(5, data.shape[1] * 0.7), max(4, data.shape[0] * 0.7))
+    )
     cmap = plt.get_cmap("viridis").copy()
     cmap.set_bad(color="#e0e0e0")
     im = ax.imshow(masked, cmap=cmap, vmin=_vmin, vmax=_vmax)
-    
+
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
             val = data[i, j]
             if not np.isnan(val):
-                ax.text(j, i, f"{val:.{decimals}f}", ha="center", va="center", 
-                        color="black" if (val-_vmin)/(_vmax-_vmin+1e-6) > 0.6 else "white")
-    
+                ratio = (val - _vmin) / (_vmax - _vmin + 1e-6)
+                ax.text(
+                    j, i, f"{val:.{decimals}f}",
+                    ha="center", va="center",
+                    color="black" if ratio > 0.6 else "white"
+                )
+
     plt.colorbar(im, ax=ax, label="施肥量 (kg/10a)")
     st.pyplot(fig, use_container_width=True)
 
 with tab_var:
     st.dataframe(variable_N.round(3), use_container_width=True)
+
 with tab2:
     st.dataframe(n_uptake.round(3), use_container_width=True)
+
 with tab3:
-    st.caption(f"計算: 窒素吸収量 × 肥効率({efficiency})")
+    st.caption(f"計算: 窒素吸収量 × 肥効率近似値({efficiency})")
     st.dataframe(n_green_manure.round(3), use_container_width=True)
+
 with tab1:
     st.dataframe(gndvi_df, use_container_width=True)
 
@@ -250,6 +279,7 @@ excel_bytes = to_excel_bytes({
     "緑肥由来の窒素量シート": n_green_manure.round(6),
     "可変施肥量シート": variable_N.round(6),
 })
+
 st.download_button(
     label="📥 Excel ダウンロード",
     data=excel_bytes,
