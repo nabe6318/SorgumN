@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="可変施肥量計算（GNDVI→N吸収量）", layout="wide")
 st.markdown(
-    "<h3 style='text-align: center;'>🌿 可変施肥量計算（GNDVI→窒素吸収量→可変施肥量）緑肥プロ O.Watanabe, Shinshu Univ.</h3>",
+    "<h3 style='text-align: center;'>🌿 可変施肥量計算（GNDVI→窒素吸収量→可変施肥量）緑肥プロ </h3>",
     unsafe_allow_html=True
 )
 
@@ -283,3 +283,4 @@ st.download_button(
     file_name=f"variable_fertilizer_{crop_type}.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
+
