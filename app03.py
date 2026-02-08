@@ -1,4 +1,3 @@
-# app.py
 import io
 import streamlit as st
 import numpy as np
@@ -92,21 +91,19 @@ crop_type = st.sidebar.selectbox(
     ["ソルガム", "クロタラリア"]
 )
 
-# ★修正：ソルガムの式を変更（クロタラリアはそのまま）
+# 【修正箇所】ソルガムの計算式パラメータを更新
 if crop_type == "ソルガム":
-    coeff_a = 0.0394
-    coeff_b = 8.0356
+    coeff_a = 0.2567
+    coeff_b = 5.125
 else:  # クロタラリア
     coeff_a = 0.0711
     coeff_b = 7.1541
 
-# ★修正：基準施肥量デフォルトを 8 に変更
 baseline_N = st.sidebar.number_input(
     "基準施肥量（kg/10a）",
     min_value=0.0, max_value=100.0, value=8.0, step=0.1, format="%.2f"
 )
 
-# ★修正：表示名を「肥効率」→「肥効率近似値」
 efficiency = st.sidebar.number_input(
     "肥効率近似値（緑肥由来窒素の利用率）",
     min_value=0.0, max_value=1.0, value=0.3, step=0.01, format="%.2f"
@@ -181,7 +178,7 @@ def safe_exp(x):
     with np.errstate(over="ignore", invalid="ignore"):
         return np.exp(x)
 
-# 窒素吸収量 (選択された緑肥の係数を使用)
+# 窒素吸収量 (更新された係数を使用)
 n_uptake_raw = coeff_a * safe_exp(coeff_b * gndvi_df.astype(float))
 n_uptake = n_uptake_raw.clip(upper=26.6)
 
