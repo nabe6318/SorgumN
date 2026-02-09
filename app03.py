@@ -91,7 +91,6 @@ crop_type = st.sidebar.selectbox(
     ["ソルガム", "クロタラリア"]
 )
 
-# 【修正箇所】ソルガムの計算式パラメータを更新
 if crop_type == "ソルガム":
     coeff_a = 0.2567
     coeff_b = 5.125
@@ -105,7 +104,7 @@ baseline_N = st.sidebar.number_input(
 )
 
 efficiency = st.sidebar.number_input(
-    "肥効率近似値（緑肥由来窒素の利用率）",
+    "肥効率近似値（緑肥の窒素供給率）",
     min_value=0.0, max_value=1.0, value=0.3, step=0.01, format="%.2f"
 )
 
@@ -178,22 +177,22 @@ def safe_exp(x):
     with np.errstate(over="ignore", invalid="ignore"):
         return np.exp(x)
 
-# 窒素吸収量 (更新された係数を使用)
+# 窒素吸収量
 n_uptake_raw = coeff_a * safe_exp(coeff_b * gndvi_df.astype(float))
 n_uptake = n_uptake_raw.clip(upper=26.6)
 
 if (n_uptake != n_uptake_raw).to_numpy().any():
     st.toast("窒素吸収量の上限 26.6 kg/10a を超えたセルを丸めました。", icon="⚠️")
 
-# 緑肥由来の窒素量
-n_green_manure = n_uptake * efficiency
+# 緑肥の窒素供給量
+n_supply = n_uptake * efficiency
 
 # 可変施肥量
-variable_N = baseline_N - n_green_manure
+variable_N = baseline_N - n_supply
 if clip_negative:
     variable_N = variable_N.clip(lower=0)
 
-for df in (n_uptake, n_green_manure, variable_N):
+for df in (n_uptake, n_supply, variable_N):
     df.index = gndvi_df.index
     df.columns = gndvi_df.columns
 
@@ -217,7 +216,7 @@ tab_map, tab_var, tab2, tab3, tab1 = st.tabs([
     "可変施肥マップ",
     "可変施肥量シート",
     "窒素吸収量シート",
-    "緑肥由来の窒素量シート",
+    "緑肥の窒素供給量シート",
     "植生指数シート",
 ])
 
@@ -262,7 +261,7 @@ with tab2:
 
 with tab3:
     st.caption(f"計算: 窒素吸収量 × 肥効率近似値({efficiency})")
-    st.dataframe(n_green_manure.round(3), use_container_width=True)
+    st.dataframe(n_supply.round(3), use_container_width=True)
 
 with tab1:
     st.dataframe(gndvi_df, use_container_width=True)
@@ -273,7 +272,7 @@ with tab1:
 excel_bytes = to_excel_bytes({
     "植生指数シート": gndvi_df,
     "窒素吸収量シート": n_uptake.round(6),
-    "緑肥由来の窒素量シート": n_green_manure.round(6),
+    "緑肥の窒素供給量シート": n_supply.round(6),
     "可変施肥量シート": variable_N.round(6),
 })
 
@@ -283,4 +282,3 @@ st.download_button(
     file_name=f"variable_fertilizer_{crop_type}.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
-
